@@ -26,6 +26,17 @@ be read.
 
 ## Install
 
+### Homebrew
+
+```sh
+brew install --cask ahmetrende/tap/badgebar
+```
+
+Then open it once via right-click → **Open** (see step 3 below), and grant
+Accessibility permission.
+
+### Manual (DMG)
+
 1. Download `BadgeBar.dmg` from the [latest release](../../releases/latest).
 2. Open it and drag **BadgeBar** into **Applications**.
 3. **First launch:** because the app isn't notarized by Apple, double-clicking
