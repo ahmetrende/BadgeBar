@@ -1,5 +1,7 @@
 # BadgeBar
 
+![BadgeBar — app unread badges mirrored into the macOS menu bar](Docs/badgebar.png)
+
 Mirror app **unread badges** (Mail, Slack, Microsoft Teams, …) into the macOS
 **menu bar**, so you never miss a message while working full-screen or on a
 second display where the Dock isn't visible.
