@@ -7,6 +7,7 @@ enum SettingsKeys {
     static let hideWhenNoBadge = "settings.hideWhenNoBadge"
     static let dimWhenNoBadge = "settings.dimWhenNoBadge"
     static let hideWhenAppNotRunning = "settings.hideWhenAppNotRunning"
+    static let showControlIcon = "settings.showControlIcon"
     static let floatingAlert = "settings.floatingAlert"
     static let floatingAlertDuration = "settings.floatingAlertDuration"
 }
@@ -37,6 +38,13 @@ enum Settings {
     /// Defaults to off.
     static var hideWhenAppNotRunning: Bool {
         UserDefaults.standard.bool(forKey: SettingsKeys.hideWhenAppNotRunning)
+    }
+
+    /// Always keep a BadgeBar icon in the menu bar (for quick access to
+    /// settings), even when no monitored app currently has a badge.
+    /// Defaults to off — the menu bar stays clean when there's nothing to show.
+    static var showControlIcon: Bool {
+        UserDefaults.standard.bool(forKey: SettingsKeys.showControlIcon)
     }
 
     /// Show a floating on-screen alert when a new message arrives (works over

@@ -132,6 +132,7 @@ private struct PreferencesTab: View {
     @AppStorage(SettingsKeys.hideWhenNoBadge) private var hideWhenNoBadge = false
     @AppStorage(SettingsKeys.dimWhenNoBadge) private var dimWhenNoBadge = false
     @AppStorage(SettingsKeys.hideWhenAppNotRunning) private var hideWhenAppNotRunning = false
+    @AppStorage(SettingsKeys.showControlIcon) private var showControlIcon = false
     @AppStorage(SettingsKeys.floatingAlert) private var floatingAlert = true
     @AppStorage(SettingsKeys.floatingAlertDuration) private var floatingAlertDuration = 4.0
 
@@ -159,6 +160,10 @@ private struct PreferencesTab: View {
                 Toggle(isOn: $hideWhenAppNotRunning) {
                     Text("Hide an app when it isn't running")
                     Text("Removes the icon while the app is closed.")
+                }
+                Toggle(isOn: $showControlIcon) {
+                    Text("Always show a BadgeBar icon")
+                    Text("Keeps a small BadgeBar icon in the menu bar for quick access, even when nothing has a notification.")
                 }
             }
 

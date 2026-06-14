@@ -56,8 +56,6 @@ final class StatusItemController: NSObject {
         let dimWhenNoBadge = Settings.dimWhenNoBadge
         let hideWhenAppNotRunning = Settings.hideWhenAppNotRunning
 
-        var anyVisible = false
-
         for app in apps {
             guard let item = items[app.bundleId], let button = item.button else { continue }
             let badge = store.badges[app.bundleId]
@@ -71,7 +69,6 @@ final class StatusItemController: NSObject {
             }
 
             if !item.isVisible { item.isVisible = true }
-            anyVisible = true
 
             // Only redraw when the displayed state actually changed — the badge
             // is unchanged on the vast majority of 1 Hz polls.
@@ -86,8 +83,10 @@ final class StatusItemController: NSObject {
             }
         }
 
-        // Keep a way into the app: show the gear whenever nothing else is.
-        syncControlItem(show: !anyVisible)
+        // Show the BadgeBar icon when the user opted in, or when nothing is
+        // configured yet (so a first-run user always has a way in). Otherwise
+        // the menu bar stays clean even when no app currently has a badge.
+        syncControlItem(show: Settings.showControlIcon || apps.isEmpty)
     }
 
     // MARK: - Fallback control item

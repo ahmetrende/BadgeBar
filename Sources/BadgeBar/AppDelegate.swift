@@ -33,6 +33,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
+    /// Reopening the app (e.g. launching it again from Finder/Spotlight) opens
+    /// the settings window. This is the way back in when the menu bar is empty
+    /// because every monitored app is currently hidden.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        showSettings()
+        return true
+    }
+
     func showSettings() {
         if settingsWindow == nil {
             let hosting = NSHostingController(rootView: SettingsView(store: store))
