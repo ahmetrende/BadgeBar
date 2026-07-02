@@ -24,15 +24,15 @@ fi
 
 # Prefer a stable self-signed identity (created by setup-signing.sh) so the
 # Accessibility permission survives rebuilds. Fall back to ad-hoc otherwise.
-IDENTITY="BadgeBar Self-Signed"
-KEYCHAIN="$HOME/Library/Keychains/badgebar-signing.keychain-db"
+# shellcheck source=signing-config.sh
+source "$ROOT/signing-config.sh"
 BUNDLE_ID="com.ahmetrende.badgebar"
 
 # Note: a self-signed cert is "not trusted", so it won't appear under
 # `find-identity -v`; query without -v to find it.
 if [ -f "$KEYCHAIN" ] && security find-identity -p codesigning "$KEYCHAIN" 2>/dev/null | grep -q "$IDENTITY"; then
     echo "▸ Code-signing with stable identity ($IDENTITY)…"
-    security unlock-keychain -p badgebar "$KEYCHAIN" 2>/dev/null || true
+    security unlock-keychain -p "$KC_PASS" "$KEYCHAIN" 2>/dev/null || true
     codesign --force --sign "$IDENTITY" --identifier "$BUNDLE_ID" "$APP_DIR"
 else
     echo "▸ Code-signing (ad-hoc — run ./setup-signing.sh to make permission persist)…"

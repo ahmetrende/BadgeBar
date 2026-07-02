@@ -12,7 +12,9 @@ struct AppInfo: Identifiable, Hashable {
         NSWorkspace.shared.icon(forFile: path)
     }
 
-    /// The candidate strings a Dock tile might use as its `AXTitle`.
+    /// The candidate strings a Dock tile might use as its `AXTitle`, in
+    /// priority order (display name first). Deduped while preserving order so
+    /// tile matching is deterministic across launches.
     var dockTitles: [String] {
         var titles = [name]
         if let bundle = Bundle(path: path) {
@@ -22,7 +24,8 @@ struct AppInfo: Identifiable, Hashable {
                 }
             }
         }
-        return Array(Set(titles)).filter { !$0.isEmpty }
+        var seen = Set<String>()
+        return titles.filter { !$0.isEmpty && seen.insert($0).inserted }
     }
 
     func toMonitored() -> MonitoredApp {

@@ -8,6 +8,11 @@ let package = Package(
         .executableTarget(
             name: "BadgeBar",
             path: "Sources/BadgeBar"
+        ),
+        .testTarget(
+            name: "BadgeBarTests",
+            dependencies: ["BadgeBar"],
+            path: "Tests/BadgeBarTests"
         )
     ],
     swiftLanguageModes: [.v5]

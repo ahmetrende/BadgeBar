@@ -10,6 +10,7 @@ enum SettingsKeys {
     static let showControlIcon = "settings.showControlIcon"
     static let floatingAlert = "settings.floatingAlert"
     static let floatingAlertDuration = "settings.floatingAlertDuration"
+    static let pollInterval = "settings.pollInterval"
 }
 
 /// Read-only accessors for the status-bar renderer. The SwiftUI side writes the
@@ -57,5 +58,13 @@ enum Settings {
     static var floatingAlertDuration: Double {
         let value = UserDefaults.standard.double(forKey: SettingsKeys.floatingAlertDuration)
         return value > 0 ? value : 4
+    }
+
+    /// Seconds between Dock polls. Lower = snappier badges, higher = fewer
+    /// wakeups (better on battery). Defaults to 1; clamped to 1…10.
+    static var pollInterval: Double {
+        let value = UserDefaults.standard.double(forKey: SettingsKeys.pollInterval)
+        guard value > 0 else { return 1 }
+        return min(max(value, 1), 10)
     }
 }

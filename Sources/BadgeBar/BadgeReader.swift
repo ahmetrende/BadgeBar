@@ -3,21 +3,16 @@ import ApplicationServices
 
 /// Reads unread-badge text from the Dock's accessibility tree.
 ///
-/// macOS apps render their unread count onto their Dock tile, and the Dock
-/// exposes it as the tile element's `AXStatusLabel`. The Accessibility API
-/// can't notify us when that value changes, so we poll — but cheaply:
-///
-/// - Each monitored app's tile `AXUIElement` is **cached**, so a poll normally
-///   costs just one attribute read per app (a single cross-process call each).
-/// - A full Dock walk happens only when a cached tile is missing or has gone
-///   stale (app launched/quit, tile reordered, Dock restarted).
+/// macOS apps render their unread count onto their Dock tile, exposed as the
+/// tile's `AXStatusLabel`. The API can't notify us on changes, so we poll — but
+/// cheaply: each monitored app's tile `AXUIElement` is cached, so a poll
+/// normally costs one attribute read per app. A full Dock walk happens only
+/// when a cached tile is stale, or when a *running* app has no cached tile yet.
 @MainActor
 final class BadgeReader {
     private let statusLabelAttribute = "AXStatusLabel" as CFString
 
-    /// When an app has no Dock tile (closed and not kept in the Dock), don't
-    /// walk the whole tree every second hunting for it — back off to roughly
-    /// every few seconds. A tile that goes *stale* still re-resolves at once.
+    /// Rate-limit walks triggered purely by a running-but-unresolved app.
     private let missingWalkBackoff = 3
     private var ticksSinceWalk = Int.max   // force a walk on the first poll
 
@@ -27,11 +22,16 @@ final class BadgeReader {
 
     /// Returns `[bundleId: badgeText]` for apps that currently have a badge.
     func badges(for apps: [MonitoredApp]) -> [String: String] {
-        var result: [String: String] = [:]
-        var hasStale = false      // a cached tile went invalid (app quit / Dock changed)
-        var hasMissing = false    // an app has no cached tile yet
+        // Drop cached tiles for apps no longer monitored (bounded memory).
+        let ids = Set(apps.map(\.bundleId))
+        if tileCache.count > ids.count {
+            tileCache = tileCache.filter { ids.contains($0.key) }
+        }
 
-        // Fast path: read each app's cached tile directly.
+        var result: [String: String] = [:]
+        var hasStale = false
+        var hasMissing = false   // running app with no resolved tile — worth a walk
+
         for app in apps {
             if let tile = tileCache[app.bundleId] {
                 let (valid, badge) = status(of: tile)
@@ -41,7 +41,11 @@ final class BadgeReader {
                 }
                 tileCache[app.bundleId] = nil
                 hasStale = true
-            } else {
+            }
+            // Only a running app is guaranteed a live Dock tile. Don't walk the
+            // whole tree hunting for an app that isn't running (it has no live
+            // badge anyway) — that was a perpetual once-every-few-seconds walk.
+            if isRunning(app.bundleId) {
                 hasMissing = true
             }
         }
@@ -53,10 +57,9 @@ final class BadgeReader {
         }
         ticksSinceWalk = 0
 
-        // Slow path (rare): one Dock walk to resolve any missing tiles.
-        let tilesByTitle = walkDockTiles()
+        let scan = walkDock()
         for app in apps where tileCache[app.bundleId] == nil {
-            guard let tile = app.titles.lazy.compactMap({ tilesByTitle[$0] }).first else { continue }
+            guard let tile = resolveTile(for: app, in: scan) else { continue }
             tileCache[app.bundleId] = tile
             let (_, badge) = status(of: tile)
             if let badge, !badge.isEmpty { result[app.bundleId] = badge }
@@ -64,9 +67,22 @@ final class BadgeReader {
         return result
     }
 
+    private func resolveTile(for app: MonitoredApp, in scan: DockScan) -> AXUIElement? {
+        // Prefer an exact bundle-id match (robust when two apps share a title).
+        if let byId = scan.byBundleId[app.bundleId] {
+            return byId
+        }
+        return app.titles.lazy.compactMap { scan.byTitle[$0] }.first
+    }
+
+    private func isRunning(_ bundleId: String) -> Bool {
+        NSRunningApplication
+            .runningApplications(withBundleIdentifier: bundleId)
+            .contains { !$0.isTerminated }
+    }
+
     /// Reads `AXStatusLabel`. `valid` is false only when the element itself is
-    /// stale/invalid (so we know to re-resolve); a valid element with no badge
-    /// returns `(true, nil)`.
+    /// stale/invalid; a valid element with no badge returns `(true, nil)`.
     private func status(of element: AXUIElement) -> (valid: Bool, badge: String?) {
         var value: AnyObject?
         let error = AXUIElementCopyAttributeValue(element, statusLabelAttribute, &value)
@@ -80,35 +96,53 @@ final class BadgeReader {
 
     // MARK: - Dock walk (slow path)
 
-    private func walkDockTiles() -> [String: AXUIElement] {
-        guard let dock = currentDock() else { return [:] }
-        var tiles: [String: AXUIElement] = [:]
-        collectTiles(from: dock, depth: 0, into: &tiles)
-        return tiles
+    private struct DockScan {
+        var byBundleId: [String: AXUIElement] = [:]
+        var byTitle: [String: AXUIElement] = [:]
     }
 
-    private func collectTiles(from element: AXUIElement, depth: Int, into tiles: inout [String: AXUIElement]) {
+    private func walkDock() -> DockScan {
+        guard let dock = currentDock() else { return DockScan() }
+        var scan = DockScan()
+        collectTiles(from: dock, depth: 0, into: &scan)
+        return scan
+    }
+
+    private func collectTiles(from element: AXUIElement, depth: Int, into scan: inout DockScan) {
         guard depth < 6 else { return }   // the Dock tree is shallow; cap as a safety net
 
-        // Only elements that support AXStatusLabel are Dock tiles; record those
-        // by title. (This also avoids recording containers like the Dock app
-        // root or the item lists.)
+        // Only elements that support AXStatusLabel are Dock tiles.
         var statusValue: AnyObject?
-        let supportsStatus = AXUIElementCopyAttributeValue(element, statusLabelAttribute, &statusValue)
-        if supportsStatus == .success || supportsStatus == .noValue,
-           let title = copyString(element, kAXTitleAttribute as CFString), !title.isEmpty {
-            tiles[title] = element
+        let support = AXUIElementCopyAttributeValue(element, statusLabelAttribute, &statusValue)
+        if support == .success || support == .noValue {
+            if let bundleId = bundleId(of: element) {
+                scan.byBundleId[bundleId] = element
+            }
+            if let title = copyString(element, kAXTitleAttribute as CFString), !title.isEmpty {
+                scan.byTitle[title] = element
+            }
         }
 
         for child in children(of: element) {
-            collectTiles(from: child, depth: depth + 1, into: &tiles)
+            collectTiles(from: child, depth: depth + 1, into: &scan)
         }
     }
 
+    /// A Dock tile often exposes the app's file URL; resolve its bundle id so we
+    /// can match by identity rather than by (possibly shared) display name.
+    private func bundleId(of element: AXUIElement) -> String? {
+        var value: AnyObject?
+        guard AXUIElementCopyAttributeValue(element, kAXURLAttribute as CFString, &value) == .success,
+              let url = value as? URL else { return nil }
+        return Bundle(url: url)?.bundleIdentifier
+    }
+
     private func currentDock() -> AXUIElement? {
+        // Prefer a live (non-terminated) Dock process; ".last" was arbitrary.
         guard let pid = NSRunningApplication
             .runningApplications(withBundleIdentifier: "com.apple.dock")
-            .last?.processIdentifier
+            .first(where: { !$0.isTerminated })?
+            .processIdentifier
         else { return nil }
 
         if dockElement == nil || dockPID != pid {

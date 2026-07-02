@@ -6,11 +6,10 @@ import Foundation
 /// walk per second costs well under a millisecond.
 @MainActor
 final class BadgeMonitor {
-    private static let interval: TimeInterval = 1.0
-
     private let store: AppStore
     private let reader = BadgeReader()
     private var timer: Timer?
+    private var currentInterval: TimeInterval = 0
 
     /// Previous badge text per bundle id, for detecting new messages.
     private var previousText: [String: String] = [:]
@@ -30,10 +29,33 @@ final class BadgeMonitor {
     }
 
     func start() {
-        timer = Timer.scheduledTimer(withTimeInterval: Self.interval, repeats: true) { [weak self] _ in
+        scheduleTimer()
+        timer?.fire()
+    }
+
+    private func scheduleTimer() {
+        timer?.invalidate()
+        currentInterval = Settings.pollInterval
+        timer = Timer.scheduledTimer(withTimeInterval: currentInterval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
         }
-        timer?.fire()
+    }
+
+    /// Decides whether a badge change should raise a "new message" alert.
+    /// Fires on first appearance, a numeric increase (handles "9+"), or any
+    /// change involving non-numeric text. Pure so it's unit-testable.
+    nonisolated static func isNewMessage(old: String, new: String) -> Bool {
+        guard !new.isEmpty, new != old else { return false }
+        if old.isEmpty { return true }
+        if let newN = leadingInt(new), let oldN = leadingInt(old) {
+            return newN > oldN
+        }
+        return true
+    }
+
+    nonisolated private static func leadingInt(_ text: String) -> Int? {
+        let digits = text.prefix { $0.isNumber }
+        return digits.isEmpty ? nil : Int(digits)
     }
 
     private func tick() {
@@ -74,15 +96,17 @@ final class BadgeMonitor {
                     continue
                 }
 
-                // Fire on a numeric increase, or an empty→non-empty transition.
-                let isNew = !newText.isEmpty
-                    && newText != oldText
-                    && ((Int(newText) ?? 0) > (Int(oldText) ?? 0) || oldText.isEmpty)
-                if isNew {
+                if Self.isNewMessage(old: oldText, new: newText),
+                   app.alerts(default: Settings.floatingAlertEnabled) {
                     onNewMessage?(app, newText)
                 }
             }
         }
         onTick?()
+
+        // Re-arm the timer if the user changed the poll interval.
+        if Settings.pollInterval != currentInterval {
+            scheduleTimer()
+        }
     }
 }

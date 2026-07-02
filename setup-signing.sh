@@ -11,9 +11,8 @@
 # adds it to the search list. Safe and reversible: `security delete-keychain`.
 set -euo pipefail
 
-IDENTITY="BadgeBar Self-Signed"
-KEYCHAIN="$HOME/Library/Keychains/badgebar-signing.keychain-db"
-KC_PASS="badgebar"
+# shellcheck source=signing-config.sh
+source "$(cd "$(dirname "$0")" && pwd)/signing-config.sh"
 
 # A self-signed cert is "not trusted", so it won't show under `-v`; query
 # without it.

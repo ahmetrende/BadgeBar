@@ -10,23 +10,43 @@ final class AlertPresenter {
     private var hosting: NSHostingController<FloatingAlertView>?
     private var dismissTask: DispatchWorkItem?
 
-    func show(app: MonitoredApp, badge: String) {
-        guard Settings.floatingAlertEnabled else { return }
+    /// Pending alerts shown one after another so a burst doesn't overwrite
+    /// itself. At most one entry per app (latest badge wins).
+    private var queue: [(app: MonitoredApp, badge: String)] = []
+    private var showing = false
 
-        let icon = AppIconLoader.icon(forBundleId: app.bundleId)
-        let view = FloatingAlertView(icon: icon, appName: app.name, badge: badge) {
+    /// Whether the alert is enabled is decided by the caller (global + per-app);
+    /// this just presents. Alerts are serialized so a new one never clobbers a
+    /// visible one, and a stale fade-out can never hide a fresh panel.
+    func show(app: MonitoredApp, badge: String) {
+        queue.removeAll { $0.app.bundleId == app.bundleId }
+        queue.append((app, badge))
+        if !showing { presentNext() }
+    }
+
+    private func presentNext() {
+        guard !queue.isEmpty else {
+            showing = false
+            return
+        }
+        showing = true
+        let (app, badge) = queue.removeFirst()
+
+        let view = FloatingAlertView(icon: AppIcons.icon(forBundleId: app.bundleId),
+                                     appName: app.name,
+                                     badge: badge) {
             AppLauncher.activate(bundleId: app.bundleId)
         }
 
         let panel = ensurePanel()
         hosting?.rootView = view
         position(panel)
-
-        panel.alphaValue = 0
         panel.orderFrontRegardless()
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.18
-            panel.animator().alphaValue = 1
+        if panel.alphaValue < 1 {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.18
+                panel.animator().alphaValue = 1
+            }
         }
 
         scheduleDismiss()
@@ -81,12 +101,31 @@ final class AlertPresenter {
     }
 
     private func dismiss() {
-        guard let panel else { return }
+        guard let panel else {
+            showing = false
+            presentNext()
+            return
+        }
+        // If another alert is queued, hand the panel straight to it (no flicker);
+        // otherwise fade out and hide.
+        if !queue.isEmpty {
+            presentNext()
+            return
+        }
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.3
             panel.animator().alphaValue = 0
-        } completionHandler: {
-            panel.orderOut(nil)
+        } completionHandler: { [weak self] in
+            // NSAnimationContext completions run on the main thread.
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if self.queue.isEmpty {
+                    panel.orderOut(nil)
+                    self.showing = false
+                } else {
+                    self.presentNext()
+                }
+            }
         }
     }
 }
@@ -107,7 +146,7 @@ private struct FloatingAlertView: View {
                 Text(appName.isEmpty ? " " : appName)
                     .font(.headline)
                     .lineLimit(1)
-                Text("New notification")
+                Text(L.t("New notification"))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }

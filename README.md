@@ -90,7 +90,8 @@ icon appears there instead; click it to grant access.
 
 The configuration window has two tabs:
 
-- **Apps** — search installed apps and add/remove them from the menu bar.
+- **Apps** — search installed apps to add/remove them, and **drag the monitored
+  list to reorder** how icons appear in the menu bar.
 - **Settings**:
   - **Menu bar**
     - *Show unread count* — off shows a small red dot instead of the number.
@@ -99,12 +100,20 @@ The configuration window has two tabs:
     - *Dim the icon when there's no notification* — greys it out instead of
       hiding.
     - *Hide an app when it isn't running* — removes the icon while closed.
+    - *Always show a BadgeBar icon* — keep a permanent menu-bar entry.
   - **On-screen alert** — a floating alert that appears briefly on top of
     everything (including full-screen apps) when a new message arrives.
     Toggle on/off and choose how long it stays (2 / 4 / 6 s). Click it to open
     the app.
-  - **General** — *Launch at login* (via `SMAppService`).
+  - **General** — *Launch at login* (via `SMAppService`), a *Poll interval*
+    (1 / 2 / 5 s) to trade latency for fewer wakeups, and *Check for Updates…*.
   - **Permissions** — Accessibility status with a deep-link to System Settings.
+    If access is revoked while running, a warning icon appears in the menu bar.
+
+**Per-app overrides:** right-click an app's menu-bar icon → *This app* to
+override *Show unread count* or the floating alert just for that app.
+
+The UI is localized (English / Turkish, following your system language).
 
 ## Performance
 
@@ -181,7 +190,13 @@ Sources/BadgeBar/
 ## Contributing
 
 Issues and pull requests are welcome. To hack on it: clone, run `./run.sh`, and
-edit. No Xcode required (though `Package.swift` opens in Xcode too).
+edit. No Xcode required to build the app (though `Package.swift` opens in Xcode
+too).
+
+Unit tests cover the pure logic (badge-change detection, version comparison,
+model persistence). Run them with `swift test` — this needs XCTest, which ships
+with Xcode, so it runs in CI (GitHub Actions, `.github/workflows/ci.yml`) even
+if your local machine only has the Command Line Tools.
 
 ## License
 
