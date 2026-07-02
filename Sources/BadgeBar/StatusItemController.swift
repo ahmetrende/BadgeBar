@@ -16,6 +16,7 @@ final class StatusItemController: NSObject {
     private var iconCache: [String: NSImage] = [:]
     private var lastRenderKey: [String: String] = [:]   // bundleId -> rendered state
     private var controlItem: NSStatusItem?
+    private var controlWarning = false
     private let runningApps = RunningApps()
 
     init(store: AppStore) {
@@ -36,6 +37,7 @@ final class StatusItemController: NSObject {
             }
             items[bundleId] = nil
             lastRenderKey[bundleId] = nil
+            iconCache[bundleId] = nil
         }
 
         // Add items for newly monitored apps.
@@ -83,31 +85,48 @@ final class StatusItemController: NSObject {
             }
         }
 
-        // Show the BadgeBar icon when the user opted in, or when nothing is
-        // configured yet (so a first-run user always has a way in). Otherwise
-        // the menu bar stays clean even when no app currently has a badge.
-        syncControlItem(show: Settings.showControlIcon || apps.isEmpty)
+        // Show the BadgeBar icon when Accessibility access is missing (a
+        // warning the user must act on), when the user opted in, or when
+        // nothing is configured yet (so a first-run user always has a way in).
+        // Otherwise the menu bar stays clean even with no current badge.
+        let trusted = Accessibility.isTrusted
+        syncControlItem(show: !trusted || Settings.showControlIcon || apps.isEmpty,
+                        warning: !trusted)
     }
 
     // MARK: - Fallback control item
 
-    private func syncControlItem(show: Bool) {
-        if !show {
+    private func syncControlItem(show: Bool, warning: Bool) {
+        guard show else {
             if let controlItem {
                 NSStatusBar.system.removeStatusItem(controlItem)
                 self.controlItem = nil
             }
             return
         }
-        guard controlItem == nil else { return }
-        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        if let button = item.button {
-            button.image = NSImage(systemSymbolName: "bell.badge", accessibilityDescription: "BadgeBar")
-            button.target = self
-            button.action = #selector(openConfigure)
-            button.toolTip = "BadgeBar — choose apps to monitor"
+
+        if controlItem == nil {
+            let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+            if let button = item.button {
+                button.target = self
+                button.action = #selector(handleControlClick(_:))
+                button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+            }
+            controlItem = item
         }
-        controlItem = item
+
+        guard let button = controlItem?.button else { return }
+        if controlWarning != warning || button.image == nil {
+            controlWarning = warning
+            if warning {
+                button.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill",
+                                       accessibilityDescription: "Accessibility access required")
+                button.toolTip = "BadgeBar needs Accessibility access — click to grant"
+            } else {
+                button.image = NSImage(systemSymbolName: "bell.badge", accessibilityDescription: "BadgeBar")
+                button.toolTip = "BadgeBar — click to configure, right-click for menu"
+            }
+        }
     }
 
     // MARK: - Actions
@@ -130,6 +149,38 @@ final class StatusItemController: NSObject {
         onConfigure?()
     }
 
+    @objc private func handleControlClick(_ sender: NSStatusBarButton) {
+        // In the warning state the icon's whole job is to fix the permission.
+        if controlWarning {
+            Accessibility.prompt()
+            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+                NSWorkspace.shared.open(url)
+            }
+            return
+        }
+
+        let event = NSApp.currentEvent
+        let isRightClick = event?.type == .rightMouseUp
+        let isOptionClick = event?.modifierFlags.contains(.option) ?? false
+        if isRightClick || isOptionClick {
+            showControlMenu(from: sender)
+        } else {
+            onConfigure?()
+        }
+    }
+
+    private func showControlMenu(from button: NSStatusBarButton) {
+        let menu = NSMenu()
+        let configure = NSMenuItem(title: "Configure…", action: #selector(openConfigure), keyEquivalent: ",")
+        configure.target = self
+        menu.addItem(configure)
+        menu.addItem(.separator())
+        let quit = NSMenuItem(title: "Quit BadgeBar", action: #selector(menuQuit), keyEquivalent: "q")
+        quit.target = self
+        menu.addItem(quit)
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.height + 4), in: button)
+    }
+
     @objc private func menuRemove(_ sender: NSMenuItem) {
         guard let bundleId = sender.representedObject as? String else { return }
         store.remove(bundleId)
@@ -142,12 +193,6 @@ final class StatusItemController: NSObject {
 
     private func showMenu(for app: MonitoredApp, from button: NSStatusBarButton) {
         let menu = NSMenu()
-
-        let openItem = NSMenuItem(title: "Open \(app.name)", action: #selector(handleClick(_:)), keyEquivalent: "")
-        openItem.target = self
-        openItem.isEnabled = false   // informational; left-click already opens
-        menu.addItem(openItem)
-        menu.addItem(.separator())
 
         let configure = NSMenuItem(title: "Configure…", action: #selector(openConfigure), keyEquivalent: ",")
         configure.target = self

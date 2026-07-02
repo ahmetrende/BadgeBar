@@ -217,7 +217,10 @@ private struct PreferencesTab: View {
             }
         }
         .formStyle(.grouped)
-        .onAppear { accessibilityTrusted = Accessibility.isTrusted }
+        .onAppear {
+            accessibilityTrusted = Accessibility.isTrusted
+            launchAtLogin = LaunchAtLogin.isEnabled
+        }
     }
 
     private func openAccessibilitySettings() {

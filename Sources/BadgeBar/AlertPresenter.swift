@@ -63,7 +63,9 @@ final class AlertPresenter {
 
     private func position(_ panel: NSPanel) {
         let screen = NSScreen.withMouse ?? NSScreen.main ?? NSScreen.screens.first
-        guard let frame = screen?.frame else { return }
+        // visibleFrame excludes the menu bar and the notch inset, so the alert
+        // lands cleanly below the menu bar and beside the notch.
+        guard let frame = screen?.visibleFrame else { return }
         let size = panel.frame.size
         panel.setFrameOrigin(NSPoint(
             x: frame.midX - size.width / 2,

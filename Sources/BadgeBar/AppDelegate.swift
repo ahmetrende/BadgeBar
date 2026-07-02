@@ -47,7 +47,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             let window = NSWindow(contentViewController: hosting)
             window.title = "BadgeBar"
             window.styleMask = [.titled, .closable, .miniaturizable]
-            window.setContentSize(NSSize(width: 520, height: 600))
+            window.setContentSize(NSSize(width: 540, height: 600))
             window.center()
             window.isReleasedWhenClosed = false
             window.delegate = self

@@ -62,12 +62,14 @@ Only the Swift toolchain from Command Line Tools is needed.
 open BadgeBar.app
 ```
 
-`build.sh` compiles the package, assembles `BadgeBar.app`, and ad-hoc
-code-signs it. The package also opens directly in Xcode (open `Package.swift`)
-if you install it later.
+`build.sh` compiles the package, assembles `BadgeBar.app`, and code-signs it.
+Run `./setup-signing.sh` once to create a stable self-signed identity — then
+the Accessibility grant survives rebuilds. Without it, `build.sh` falls back to
+ad-hoc signing. The package also opens directly in Xcode (open `Package.swift`).
 
-> Note: because the build is ad-hoc signed, macOS may ask you to re-grant the
-> Accessibility permission after each rebuild (the binary's signature changes).
+> Note: with ad-hoc signing (i.e. before running `setup-signing.sh`), macOS may
+> ask you to re-grant the Accessibility permission after each rebuild, because
+> the binary's signature changes.
 
 ## Usage
 
@@ -76,11 +78,13 @@ if you install it later.
 3. Grant Accessibility permission when prompted.
 4. The app's icon appears in the menu bar; its badge (the same count the Dock
    shows) updates every second.
-   - **Left-click** an icon → open that app.
+   - **Left-click** an icon → show the app, or hide it if it's already frontmost (toggle).
    - **Right-click** (or **⌥-click**) → menu (Configure…, Stop monitoring, Quit).
 
-When nothing is monitored, a small bell icon stays in the menu bar so the
-picker is always reachable.
+When nothing is monitored — or when you enable *Always show a BadgeBar icon* —
+a small bell icon stays in the menu bar for access (left-click opens Settings,
+right-click for Configure/Quit). If Accessibility access is missing, a warning
+icon appears there instead; click it to grant access.
 
 ### Settings
 

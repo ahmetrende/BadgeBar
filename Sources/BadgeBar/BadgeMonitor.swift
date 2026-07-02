@@ -14,8 +14,10 @@ final class BadgeMonitor {
 
     /// Previous badge text per bundle id, for detecting new messages.
     private var previousText: [String: String] = [:]
-    /// Skip alerts on the very first poll so existing badges don't all fire.
-    private var primed = false
+    /// Apps whose first observation we've already recorded. The first time we
+    /// ever see an app (at launch, or when the user adds it later) we prime it
+    /// silently so a pre-existing badge doesn't fire a spurious alert.
+    private var primedApps: Set<String> = []
 
     /// Called after every poll so observers (the status bar) can refresh.
     var onTick: (() -> Void)?
@@ -36,6 +38,24 @@ final class BadgeMonitor {
 
     private func tick() {
         let apps = store.monitoredApps
+        let ids = Set(apps.map(\.bundleId))
+
+        // Drop state for apps that are no longer monitored (bounded memory).
+        if previousText.count > ids.count {
+            previousText = previousText.filter { ids.contains($0.key) }
+        }
+        primedApps.formIntersection(ids)
+
+        // Without Accessibility access nothing can be read: clear badges, let
+        // the status bar surface a warning, and re-prime so regaining access
+        // doesn't fire a burst of alerts.
+        guard Accessibility.isTrusted else {
+            for id in ids where store.badges[id] != nil { store.badges[id] = nil }
+            primedApps.removeAll()
+            onTick?()
+            return
+        }
+
         if !apps.isEmpty {
             let badges = reader.badges(for: apps)
             for app in apps {
@@ -48,15 +68,20 @@ final class BadgeMonitor {
                 let oldText = previousText[app.bundleId] ?? ""
                 previousText[app.bundleId] = newText
 
+                // First time we ever see this app: prime silently, don't alert.
+                guard primedApps.contains(app.bundleId) else {
+                    primedApps.insert(app.bundleId)
+                    continue
+                }
+
                 // Fire on a numeric increase, or an empty→non-empty transition.
                 let isNew = !newText.isEmpty
                     && newText != oldText
                     && ((Int(newText) ?? 0) > (Int(oldText) ?? 0) || oldText.isEmpty)
-                if primed && isNew {
+                if isNew {
                     onNewMessage?(app, newText)
                 }
             }
-            primed = true
         }
         onTick?()
     }
